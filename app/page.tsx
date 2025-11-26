@@ -1,64 +1,108 @@
-import Image from "next/image";
+"use client";
+
+import { useRef, useState } from "react";
+import { Muna } from "muna";
+
+const PCM_SAMPLE_RATE = 24_000;
+
+const bufferFromUint8 = (data: Uint8Array) =>
+  data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+
+const responseToArrayBuffer = async (payload: any): Promise<ArrayBufferLike> => {
+  if (!payload) {
+    throw new Error("Missing audio payload");
+  }
+
+  if (payload instanceof ArrayBuffer) {
+    return payload;
+  }
+
+  if (ArrayBuffer.isView(payload)) {
+    return bufferFromUint8(
+      new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+    );
+  }
+
+  if (typeof payload.arrayBuffer === "function") {
+    return payload.arrayBuffer();
+  }
+
+  if (payload.data) {
+    return responseToArrayBuffer(payload.data);
+  }
+
+  if (payload.body) {
+    return responseToArrayBuffer(payload.body);
+  }
+
+  throw new Error("Unsupported audio response format");
+};
 
 export default function Home() {
+  const [transcript, setTranscript] = useState("Hello from AI Engineer");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const muna = new Muna({ accessKey: "muna_kCSKMBv04D1Z6VDaldcg7" });
+  const openai = muna.beta.openai;
+
+  const handleDictate = async () => {
+    try {
+      const response = await openai.audio.speech.create({
+        model: "@kitten-ml/kitten-tts",
+        input: transcript,
+        voice: "expr-voice-2-m",
+        response_format: "pcm"
+      });
+
+      const audioData = await responseToArrayBuffer(response);
+      const audioContext = audioContextRef.current ?? new AudioContext();
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = audioContext;
+      }
+
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      const floatChannelData = new Float32Array(audioData);
+      const audioBuffer = audioContext.createBuffer(
+        1,
+        floatChannelData.length,
+        PCM_SAMPLE_RATE
+      );
+
+      audioBuffer.getChannelData(0).set(floatChannelData);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start();
+
+      console.log("Dictation response:", response);
+    } catch (error) {
+      console.error("Dictation failed:", error);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-6 font-sans dark:bg-black">
+      <main className="flex w-full max-w-xl flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-10 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Dictation Console
+        </h1>
+        <textarea
+          className="h-40 w-full rounded-xl border border-zinc-200 bg-white p-4 text-lg text-zinc-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:ring-blue-400/50"
+          aria-label="Dictation text box"
+          value={transcript}
+          onChange={(event) => setTranscript(event.target.value)}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <button
+          type="button"
+          onClick={handleDictate}
+          className="h-12 rounded-xl bg-blue-600 text-base font-semibold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 dark:bg-blue-500 dark:hover:bg-blue-400 dark:focus-visible:ring-blue-300/60"
+        >
+          Dictate Speech
+        </button>
       </main>
     </div>
   );
