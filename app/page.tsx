@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Muna } from "muna";
 
 const PCM_SAMPLE_RATE = 24_000;
@@ -41,8 +41,8 @@ const responseToArrayBuffer = async (payload: any): Promise<ArrayBufferLike> => 
 export default function Home() {
   const [transcript, setTranscript] = useState("Hello from AI Engineer");
   const audioContextRef = useRef<AudioContext | null>(null);
-  const muna = new Muna({ accessKey: "muna_kCSKMBv04D1Z6VDaldcg7" });
-  const openai = muna.beta.openai;
+  const muna = useMemo(() => new Muna({ accessKey: "muna_kCSKMBv04D1Z6VDaldcg7" }), []);
+  const openai = useMemo(() => muna.beta.openai, [muna]);
 
   const handleDictate = async () => {
     try {
